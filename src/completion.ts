@@ -311,6 +311,8 @@ class MdCompletionItemProvider implements CompletionItemProvider {
 
     mathCompletions: CompletionItem[];
 
+    EXCLUDE_GLOB: string;
+
     constructor() {
         // \cmd
         let c1 = Array.from(new Set(
@@ -358,7 +360,34 @@ class MdCompletionItemProvider implements CompletionItemProvider {
         let envSnippet = new CompletionItem('\\begin', CompletionItemKind.Snippet);
         envSnippet.insertText = new SnippetString('begin{${1|aligned,alignedat,array,bmatrix,Bmatrix,cases,darray,dcases,gathered,matrix,pmatrix,vmatrix,Vmatrix|}}\n\t$2\n\\end{$1}');
 
-        this.mathCompletions = [...c1, ...c2, ...c3, envSnippet];
+        // Pretend to support multi-workspacefolders
+        let resource = null;
+        if (workspace.workspaceFolders !== undefined && workspace.workspaceFolders.length > 0) {
+            resource = workspace.workspaceFolders[0].uri;
+        }
+
+        // Import macros from configurations
+        let configMacros = workspace.getConfiguration('markdown.extension.katex', resource).get<object>('macros');
+        var macroItems: CompletionItem[] = [];
+        for (const cmd of Object.keys(configMacros)) {
+            const expansion: string = configMacros[cmd];
+            let item = new CompletionItem(cmd, CompletionItemKind.Function);
+
+            // Find the number of arguments in the expansion
+            let numArgs = 0;
+            for (let i = 1; i < 10; i++) {
+                if (!expansion.includes(`#${i}`)) {
+                    numArgs = i - 1;
+                    break;
+                }
+            }
+
+            item.insertText = new SnippetString(cmd.slice(1) + [...Array(numArgs).keys()].map(i => `\{$${i + 1}\}`).join(""));
+            macroItems.push(item);
+        }
+
+        this.mathCompletions = [...c1, ...c2, ...c3, envSnippet, ...macroItems];
+
         // Sort
         this.mathCompletions.forEach(item => {
             item.sortText = item.label.replace(/[a-zA-Z]/g, c => {
@@ -369,6 +398,19 @@ class MdCompletionItemProvider implements CompletionItemProvider {
                 }
             });
         });
+
+        let excludePatterns = ['**/node_modules', '**/bower_components', '**/*.code-search'];
+        if (workspace.getConfiguration('markdown.extension.completion', resource).get<boolean>('respectVscodeSearchExclude')) {
+            const configExclude = workspace.getConfiguration('search', resource).get<object>('exclude');
+            for (const key of Object.keys(configExclude)) {
+                if (configExclude[key] === true) {
+                    excludePatterns.push(key);
+                }
+            }
+        }
+
+        excludePatterns = Array.from(new Set(excludePatterns));
+        this.EXCLUDE_GLOB = '{' + excludePatterns.join(',') + '}';
     }
 
     provideCompletionItems(document: TextDocument, position: Position, _token: CancellationToken, _context: CompletionContext): ProviderResult<CompletionItem[] | CompletionList> {
@@ -395,7 +437,7 @@ class MdCompletionItemProvider implements CompletionItemProvider {
             const basePath = getBasepath(document, typedDir);
             const isRootedPath = typedDir.startsWith('/');
 
-            return workspace.findFiles('**/*.{png,jpg,jpeg,svg,gif}', '**/node_modules/**').then(uris => {
+            return workspace.findFiles('**/*.{png,jpg,jpeg,svg,gif}', this.EXCLUDE_GLOB).then(uris => {
                 let items = uris.map(imgUri => {
                     const label = path.relative(basePath, imgUri.fsPath).replace(/\\/g, '/');
                     let item = new CompletionItem(label.replace(/ /g, '%20'), CompletionItemKind.File);
@@ -427,6 +469,7 @@ class MdCompletionItemProvider implements CompletionItemProvider {
                 }
             });
         } else if (
+            //// ends with an odd number of backslashes
             (matches = lineTextBefore.match(/\\+$/)) !== null
             && matches[0].length % 2 !== 0
         ) {
@@ -532,7 +575,7 @@ class MdCompletionItemProvider implements CompletionItemProvider {
             const basePath = getBasepath(document, typedDir);
             const isRootedPath = typedDir.startsWith('/');
 
-            return workspace.findFiles('**/*', '**/node_modules/**').then(uris => {
+            return workspace.findFiles('**/*', this.EXCLUDE_GLOB).then(uris => {
                 let items = uris.map(uri => {
                     const label = path.relative(basePath, uri.fsPath).replace(/\\/g, '/').replace(/ /g, '%20');
                     let item = new CompletionItem(label, CompletionItemKind.File);

@@ -16,14 +16,13 @@ export function isMdEditor(editor: TextEditor) {
     return editor && editor.document && editor.document.languageId === 'markdown';
 }
 
+export const REGEX_FENCED_CODE_BLOCK = /^( {0,3}|\t)```[^`\r\n]*$[\w\W]+?^( {0,3}|\t)``` *$/gm;
+
 export function isInFencedCodeBlock(doc: TextDocument, lineNum: number): boolean {
     let textBefore = doc.getText(new Range(new Position(0, 0), new Position(lineNum, 0)));
-    let matches = textBefore.match(/^```[\w \+]*$/gm);
-    if (matches == null) {
-        return false;
-    } else {
-        return matches.length % 2 != 0;
-    }
+    textBefore = textBefore.replace(REGEX_FENCED_CODE_BLOCK, '').replace(/<!--[\W\w]+?-->/g, '');
+    //// So far `textBefore` should contain no valid fenced code block or comment
+    return /^( {0,3}|\t)```[^`\r\n]*$[\w\W]*$/gm.test(textBefore);
 }
 
 export function mathEnvCheck(doc: TextDocument, pos: Position): string {
@@ -53,9 +52,9 @@ export function mathEnvCheck(doc: TextDocument, pos: Position): string {
     }
 }
 
-const sizeLimit = 50000; // ~50 KB
 let fileSizesCache = {}
 export function isFileTooLarge(document: TextDocument): boolean {
+    const sizeLimit = workspace.getConfiguration('markdown.extension.syntax').get<number>('decorationFileSizeLimit');
     const filePath = document.uri.fsPath;
     if (!filePath || !fs.existsSync(filePath)) {
         return false;
@@ -86,6 +85,8 @@ export function getNewFeatureMsg(version: string) {
             return localize("2.1.0 msg");
         case '2.4.0':
             return localize("2.4.0 msg");
+        case '3.0.0':
+            return localize("3.0.0 msg");
     }
     return undefined;
 }
@@ -99,38 +100,56 @@ export function showChangelog() {
    └─────────────────┘ */
 
 /**
- * For example: `_italic_` -> `italic`
- * This function is usually used before `slugify`
+ * Remove Markdown syntax (bold, italic, links etc.) in a heading.
+ * This function is only used before the `slugify` function of `github` mode.
  * 
- * (Escape syntax like `1.`)
- * 1. md.render(text)
- * 2. textInHtml(text)
- * (Unescape)
- * @param text
+ * A Markdown heading may contain Markdown styles, e.g. `_italic_`.
+ * It can also have HTML tags, e.g. `<code>`.
+ * They should not be passed to the `slugify` function.
+ *
+ * What this function actually does:
+ * 1. (Escape syntax like `1.`)
+ * 2. `md.render(text)`
+ * 3. `getTextInHtml(text)`
+ * 4. (Unescape)
+ *
+ * @param text A Markdown heading
  */
-export function extractText(text: string) {
+function mdHeadingToPlaintext(text: string) {
     //// Issue #515
     text = text.replace(/\[([^\]]*)\]\[[^\]]*\]/, (_, g1) => g1);
     //// Escape leading `1.` and `1)` (#567, #585)
     text = text.replace(/^([\d]+)(\.)/, (_, g1) => g1 + '%dot%');
     text = text.replace(/^([\d]+)(\))/, (_, g1) => g1 + '%par%');
+    //// TMP escape emoji code (which is a side effect of using `mdEngine.cacheMd` to convert MD to HTML)
+    text = text.replace(/:/g, '%colon%');
+    //// Escape math environment
+    text = text.replace(/\$/g, '%dollar%');
 
-    if (mdEngine.md === undefined) {
+    if (!mdEngine.cacheMd) {
         return text;
     }
 
-    const html = mdEngine.md.render(text).replace(/\r?\n$/, '');
-    text = textInHtml(html);
+    const html = mdEngine.cacheMd.render(text).replace(/\r?\n$/, '');
+    text = getTextInHtml(html);
 
     //// Unescape
     text = text.replace('%dot%', '.');
     text = text.replace('%par%', ')');
+    text = text.replace(/%colon%/g, ':');
+    text = text.replace(/%dollar%/g, '$');
     return text;
 }
 
-//// Convert HTML entities (#175, #575)
-//// Strip HTML tags (#179)
-function textInHtml(html: string) {
+/**
+ * Get plaintext from a HTML string
+ * 
+ * 1. Convert HTML entities (#175, #575)
+ * 2. Strip HTML tags (#179)
+ * 
+ * @param html 
+ */
+function getTextInHtml(html: string) {
     //// HTML entities
     let text = html.replace(/(&emsp;)/g, _ => ' ')
         .replace(/(&quot;)/g, _ => '"')
@@ -140,8 +159,8 @@ function textInHtml(html: string) {
     //// remove <!-- HTML comments -->
     text = text.replace(/(<!--[^>]*?-->)/g, '');
     //// remove HTML tags
-    while (/<(span|em|strong|a|p|code)[^>]*>(.*?)<\/\1>/.test(text)) {
-        text = text.replace(/<(span|em|strong|a|p|code)[^>]*>(.*?)<\/\1>/g, (_, _g1, g2) => g2)
+    while (/<(span|em|strong|a|p|code|kbd)[^>]*>(.*?)<\/\1>/.test(text)) {
+        text = text.replace(/<(span|em|strong|a|p|code|kbd)[^>]*>(.*?)<\/\1>/g, (_, _g1, g2) => g2)
     }
     text = text.replace(/ +/g, ' ');
     return text;
@@ -153,37 +172,63 @@ function textInHtml(html: string) {
 
 // Converted from `/[^\p{Word}\- ]/u`
 // `\p{Word}` => ASCII plus Letter (Ll/Lm/Lo/Lt/Lu), Mark (Mc/Me/Mn), Number (Nd/Nl/No), Connector_Punctuation (Pc)
-// Using <https://apps.timwhitlock.info/js/regex>
-const PUNCTUATION_REGEXP = /[^0-9A-Z_a-z\- ª²-³µ¹-º¼-¾À-ÖØ-öø-ˁˆ-ˑˠ-ˤˬˮ\u0300-ʹͶ-ͷͺ-ͽΆΈ-ΊΌΎ-ΡΣ-ϵϷ-ҁ\u0483-ԣԱ-Ֆՙա-և\u0591-\u05bd\u05bf\u05c1-\u05c2\u05c4-\u05c5\u05c7א-תװ-ײ\u0610-\u061aء-\u065e٠-٩ٮ-ۓە-\u06dc\u06de-\u06e8\u06ea-ۼۿܐ-\u074aݍ-ޱ߀-ߵߺ\u0901-ह\u093c-\u094dॐ-\u0954क़-\u0963०-९ॱ-ॲॻ-ॿ\u0981-\u0983অ-ঌএ-ঐও-নপ-রলশ-হ\u09bc-\u09c4\u09c7-\u09c8\u09cb-ৎ\u09d7ড়-ঢ়য়-\u09e3০-ৱ৴-৹\u0a01-\u0a03ਅ-ਊਏ-ਐਓ-ਨਪ-ਰਲ-ਲ਼ਵ-ਸ਼ਸ-ਹ\u0a3c\u0a3e-\u0a42\u0a47-\u0a48\u0a4b-\u0a4d\u0a51ਖ਼-ੜਫ਼੦-\u0a75\u0a81-\u0a83અ-ઍએ-ઑઓ-નપ-રલ-ળવ-હ\u0abc-\u0ac5\u0ac7-\u0ac9\u0acb-\u0acdૐૠ-\u0ae3૦-૯\u0b01-\u0b03ଅ-ଌଏ-ଐଓ-ନପ-ରଲ-ଳଵ-ହ\u0b3c-\u0b44\u0b47-\u0b48\u0b4b-\u0b4d\u0b56-\u0b57ଡ଼-ଢ଼ୟ-\u0b63୦-୯ୱ\u0b82-ஃஅ-ஊஎ-ஐஒ-கங-சஜஞ-டண-தந-பம-ஹ\u0bbe-\u0bc2\u0bc6-\u0bc8\u0bca-\u0bcdௐ\u0bd7௦-௲\u0c01-\u0c03అ-ఌఎ-ఐఒ-నప-ళవ-హఽ-\u0c44\u0c46-\u0c48\u0c4a-\u0c4d\u0c55-\u0c56ౘ-ౙౠ-\u0c63౦-౯౸-౾\u0c82-\u0c83ಅ-ಌಎ-ಐಒ-ನಪ-ಳವ-ಹ\u0cbc-\u0cc4\u0cc6-\u0cc8\u0cca-\u0ccd\u0cd5-\u0cd6ೞೠ-\u0ce3೦-೯\u0d02-\u0d03അ-ഌഎ-ഐഒ-നപ-ഹഽ-\u0d44\u0d46-\u0d48\u0d4a-\u0d4d\u0d57ൠ-\u0d63൦-൵ൺ-ൿ\u0d82-\u0d83අ-ඖක-නඳ-රලව-ෆ\u0dca\u0dcf-\u0dd4\u0dd6\u0dd8-\u0ddf\u0df2-\u0df3ก-\u0e3aเ-\u0e4e๐-๙ກ-ຂຄງ-ຈຊຍດ-ທນ-ຟມ-ຣລວສ-ຫອ-\u0eb9\u0ebb-ຽເ-ໄໆ\u0ec8-\u0ecd໐-໙ໜ-ໝༀ\u0f18-\u0f19༠-༳\u0f35\u0f37\u0f39\u0f3e-ཇཉ-ཬ\u0f71-\u0f84\u0f86-ྋ\u0f90-\u0f97\u0f99-\u0fbc\u0fc6က-၉ၐ-႙Ⴀ-Ⴥა-ჺჼᄀ-ᅙᅟ-ᆢᆨ-ᇹሀ-ቈቊ-ቍቐ-ቖቘቚ-ቝበ-ኈኊ-ኍነ-ኰኲ-ኵኸ-ኾዀዂ-ዅወ-ዖዘ-ጐጒ-ጕጘ-ፚ\u135f፩-፼ᎀ-ᎏᎠ-Ᏼᐁ-ᙬᙯ-ᙶᚁ-ᚚᚠ-ᛪ\u16ee-\u16f0ᜀ-ᜌᜎ-\u1714ᜠ-\u1734ᝀ-\u1753ᝠ-ᝬᝮ-ᝰ\u1772-\u1773ក-ឳ\u17b6-\u17d3ៗៜ-\u17dd០-៩៰-៹\u180b-\u180d᠐-᠙ᠠ-ᡷᢀ-ᢪᤀ-ᤜ\u1920-\u192b\u1930-\u193b᥆-ᥭᥰ-ᥴᦀ-ᦩ\u19b0-\u19c9᧐-᧙ᨀ-\u1a1b\u1b00-ᭋ᭐-᭙\u1b6b-\u1b73\u1b80-\u1baaᮮ-᮹ᰀ-\u1c37᱀-᱉ᱍ-ᱽᴀ-\u1de6\u1dfe-ἕἘ-Ἕἠ-ὅὈ-Ὅὐ-ὗὙὛὝὟ-ώᾀ-ᾴᾶ-ᾼιῂ-ῄῆ-ῌῐ-ΐῖ-Ίῠ-Ῥῲ-ῴῶ-ῼ‿-⁀⁔⁰-ⁱ⁴-⁹ⁿ-₉ₐ-ₔ\u20d0-\u20f0ℂℇℊ-ℓℕℙ-ℝℤΩℨK-ℭℯ-ℹℼ-ℿⅅ-ⅉⅎ⅓-\u2188①-⒛⓪-⓿❶-➓Ⰰ-Ⱞⰰ-ⱞⱠ-Ɐⱱ-ⱽⲀ-ⳤ⳽ⴀ-ⴥⴰ-ⵥⵯⶀ-ⶖⶠ-ⶦⶨ-ⶮⶰ-ⶶⶸ-ⶾⷀ-ⷆⷈ-ⷎⷐ-ⷖⷘ-ⷞ\u2de0-\u2dffⸯ々-\u3007\u3021-\u302f〱-〵\u3038-〼ぁ-ゖ\u3099-\u309aゝ-ゟァ-ヺー-ヿㄅ-ㄭㄱ-ㆎ㆒-㆕ㆠ-ㆷㇰ-ㇿ㈠-㈩㉑-㉟㊀-㊉㊱-㊿㐀-䶵一-鿃ꀀ-ꒌꔀ-ꘌꘐ-ꘫꙀ-ꙟꙢ-\ua672\ua67c-\ua67dꙿ-ꚗꜗ-ꜟꜢ-ꞈꞋ-ꞌꟻ-\ua827ꡀ-ꡳ\ua880-\ua8c4꣐-꣙꤀-\ua92dꤰ-\ua953ꨀ-\uaa36ꩀ-\uaa4d꩐-꩙가-힣豈-鶴侮-頻並-龎ﬀ-ﬆﬓ-ﬗיִ-ﬨשׁ-זּטּ-לּמּנּ-סּףּ-פּצּ-ﮱﯓ-ﴽﵐ-ﶏﶒ-ﷇﷰ-ﷻ\ufe00-\ufe0f\ufe20-\ufe26︳-︴﹍-﹏ﹰ-ﹴﹶ-ﻼ０-９Ａ-Ｚ＿ａ-ｚｦ-ﾾￂ-ￇￊ-ￏￒ-ￗￚ-ￜ]/gu;
+const PUNCTUATION_REGEXP = /[^\p{L}\p{M}\p{N}\p{Pc}\- ]/gu;
 
-export function slugify(heading: string, github?: boolean, downcase?: boolean) {
-    if (github === undefined) {
-        github = workspace.getConfiguration('markdown.extension.toc').get<boolean>('githubCompatibility');
+export function slugify(heading: string, mode?: string, downcase?: boolean) {
+    if (mode === undefined) {
+        mode = workspace.getConfiguration('markdown.extension.toc').get<string>('slugifyMode');
     }
     if (downcase === undefined) {
         downcase = workspace.getConfiguration('markdown.extension.toc').get<boolean>('downcaseLink');
     }
 
-    if (github) {
+    let slug = mdHeadingToPlaintext(heading.trim());
+
+    if (mode === 'github') {
         // GitHub slugify function
         // <https://github.com/jch/html-pipeline/blob/master/lib/html/pipeline/toc_filter.rb>
-        let slug = extractText(heading.trim())
+        slug = slug.replace(PUNCTUATION_REGEXP, '')
             // .replace(/[A-Z]/g, match => match.toLowerCase()) // only downcase ASCII region
-            .replace(PUNCTUATION_REGEXP, '')
             .replace(/ /g, '-');
 
         if (downcase) {
-            slug = slug.replace(/[A-Z]/g, match => match.toLowerCase())
+            slug = slug.toLowerCase()
         }
+    } else if (mode === 'gitea') {
+        // Gitea uses the blackfriday parser
+        // https://godoc.org/github.com/russross/blackfriday#hdr-Sanitized_Anchor_Names
+        slug = slug.replace(PUNCTUATION_REGEXP, '-')
+            .replace(/ /g, '-')
+            .replace(/_/g, '-')
+            .split('-')
+            .filter(Boolean)
+            .join('-');
 
-        return slug;
+        if (downcase) {
+            slug = slug.toLowerCase()
+        }
+    } else if (mode === 'gitlab') {
+        // GitLab slugify function, translated to JS
+        // <https://gitlab.com/gitlab-org/gitlab/blob/master/lib/banzai/filter/table_of_contents_filter.rb#L32>
+        // Some bits from their other slugify function
+        // <https://gitlab.com/gitlab-org/gitlab/blob/master/app/assets/javascripts/lib/utils/text_utility.js#L49>
+        slug = slug.replace(PUNCTUATION_REGEXP, '')
+            .replace(/ /g, '-')
+            // Remove any duplicate separators or separator prefixes/suffixes
+            .split('-')
+            .filter(Boolean)
+            .join('-')
+            // digits-only hrefs conflict with issue refs
+            .replace(/^(\d+)$/, 'anchor-$1');
+
+        if (downcase) {
+            slug = slug.toLowerCase();
+        }
     } else {
         // VSCode slugify function
         // <https://github.com/Microsoft/vscode/blob/f5738efe91cb1d0089d3605a318d693e26e5d15c/extensions/markdown-language-features/src/slugify.ts#L22-L29>
-        let slug = encodeURI(
-            heading.trim()
-                // .toLowerCase()
-                .replace(/\s+/g, '-') // Replace whitespace with -
+        slug = encodeURI(
+            slug.replace(/\s+/g, '-') // Replace whitespace with -
                 .replace(/[\]\[\!\'\#\$\%\&\'\(\)\*\+\,\.\/\:\;\<\=\>\?\@\\\^\_\{\|\}\~\`。，、；：？！…—·ˉ¨‘’“”々～‖∶＂＇｀｜〃〔〕〈〉《》「」『』．〖〗【】（）［］｛｝]/g, '') // Remove known punctuators
                 .replace(/^\-+/, '') // Remove leading -
                 .replace(/\-+$/, '') // Remove trailing -
@@ -192,7 +237,7 @@ export function slugify(heading: string, github?: boolean, downcase?: boolean) {
         if (downcase) {
             slug = slug.toLowerCase()
         }
-
-        return slug;
     }
+
+    return slug;
 }

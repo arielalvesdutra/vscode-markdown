@@ -3,7 +3,7 @@
     "displayName": "%ext.displayName%",
     "description": "%ext.description%",
     "icon": "images/Markdown-mark.png",
-    "version": "2.7.0",
+    "version": "3.3.0",
     "publisher": "yzhang",
     "engines": {
         "vscode": "^1.38.0"
@@ -24,6 +24,7 @@
     "license": "MIT",
     "activationEvents": [
         "onLanguage:markdown",
+        "onCommand:markdown.extension.printToHtmlBatch",
         "workspaceContains:README.md"
     ],
     "main": "./out/extension",
@@ -40,8 +41,23 @@
                 "category": "Markdown All in One"
             },
             {
+                "command": "markdown.extension.toc.addSecNumbers",
+                "title": "%command.toc.addSecNumbers.title%",
+                "category": "Markdown All in One"
+            },
+            {
+                "command": "markdown.extension.toc.removeSecNumbers",
+                "title": "%command.toc.removeSecNumbers.title%",
+                "category": "Markdown All in One"
+            },
+            {
                 "command": "markdown.extension.printToHtml",
                 "title": "%command.printToHtml.title%",
+                "category": "Markdown All in One"
+            },
+            {
+                "command": "markdown.extension.printToHtmlBatch",
+                "title": "%command.printToHtmlBatch.title%",
                 "category": "Markdown All in One"
             },
             {
@@ -181,10 +197,10 @@
                 "when": "!terminalFocus"
             },
             {
-                "command": "markdown.extension.togglePreviewToSide",
+                "command": "markdown.extension.closePreviewToSide",
                 "key": "ctrl+k v",
                 "mac": "cmd+k v",
-                "when": "!terminalFocus"
+                "when": "markdownPreviewFocus"
             },
             {
                 "command": "markdown.extension.editing.paste",
@@ -197,6 +213,12 @@
             "type": "object",
             "title": "%config.title%",
             "properties": {
+                "markdown.extension.completion.respectVscodeSearchExclude": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "%config.completion.respectVscodeSearchExclude%",
+                    "scope": "resource"
+                },
                 "markdown.extension.completion.root": {
                     "type": "string",
                     "default": "",
@@ -230,6 +252,11 @@
                     "default": "adaptive",
                     "description": "%config.list.indentationSize.description%",
                     "scope": "resource"
+                },
+                "markdown.extension.math.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "%config.math.enabled%"
                 },
                 "markdown.extension.orderedList.autoRenumber": {
                     "type": "boolean",
@@ -287,10 +314,20 @@
                     "description": "%config.print.theme%",
                     "scope": "resource"
                 },
+                "markdown.extension.print.includeVscodeStylesheets": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "%config.print.includeVscodeStylesheets%"
+                },
                 "markdown.extension.syntax.decorations": {
                     "type": "boolean",
                     "default": true,
                     "description": "%config.syntax.decorations.description%"
+                },
+                "markdown.extension.syntax.decorationFileSizeLimit": {
+                    "type": "number",
+                    "default": 50000,
+                    "description": "%config.syntax.decorationFileSizeLimit.description%"
                 },
                 "markdown.extension.syntax.plainTheme": {
                     "type": "boolean",
@@ -312,10 +349,16 @@
                     "default": true,
                     "description": "%config.toc.downcaseLink.description%"
                 },
-                "markdown.extension.toc.githubCompatibility": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "%config.toc.githubCompatibility.description%"
+                "markdown.extension.toc.slugifyMode": {
+                    "type": "string",
+                    "default": "github",
+                    "enum": [
+                        "github",
+                        "gitlab",
+                        "gitea",
+                        "vscode"
+                    ],
+                    "description": "%config.toc.slugifyMode.description%"
                 },
                 "markdown.extension.toc.levels": {
                     "type": "string",
@@ -388,28 +431,28 @@
         "test-compile": "tsc -p ./"
     },
     "dependencies": {
-        "@neilsustc/markdown-it-katex": "^0.4.0",
+        "@neilsustc/markdown-it-katex": "^0.5.0",
+        "entities": "^2.0.3",
         "grapheme-splitter": "^1.0.4",
-        "highlight.js": "^9.15.6",
+        "highlight.js": "^10.2.0",
         "image-size": "^0.7.4",
-        "markdown-it": "^10.0.0",
-        "markdown-it-footnote": "^3.0.2",
+        "markdown-it": "^11.0.0",
         "markdown-it-task-lists": "^2.1.1",
-        "string-similarity": "^3.0.0"
+        "string-similarity": "^4.0.2"
     },
     "devDependencies": {
-        "@types/highlight.js": "^9.12.3",
-        "@types/image-size": "^0.7.0",
-        "@types/markdown-it": "^0.0.9",
+        "@types/highlight.js": "^9.12.4",
+        "@types/image-size": "^0.8.0",
+        "@types/markdown-it": "^10.0.2",
         "@types/mocha": "^5.2.6",
-        "@types/node": "^11.11.3",
+        "@types/node": "^14.10.1",
         "@types/vscode": "1.38.0",
-        "glob": "^7.1.4",
-        "mocha": "^6.2.0",
-        "ts-loader": "^6.0.4",
-        "typescript": "^3.5.2",
-        "vscode-test": "^1.2.3",
-        "webpack": "^4.41.5",
-        "webpack-cli": "^3.3.10"
+        "glob": "^7.1.6",
+        "mocha": "^7.1.1",
+        "ts-loader": "^8.0.3",
+        "typescript": "^4.0.2",
+        "vscode-test": "^1.4.0",
+        "webpack": "^4.44.1",
+        "webpack-cli": "^3.3.12"
     }
 }

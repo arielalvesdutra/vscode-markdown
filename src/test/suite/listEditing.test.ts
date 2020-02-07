@@ -8,18 +8,14 @@ suite("List editing.", () => {
         // 💩 Preload file to prevent the first test timeout
         await workspace.openTextDocument(testMdFile);
 
-        for (let key in previousConfigs) {
-            if (previousConfigs.hasOwnProperty(key)) {
-                previousConfigs[key] = workspace.getConfiguration('', null).get(key);
-            }
+        for (let key of Object.keys(previousConfigs)) {
+            previousConfigs[key] = workspace.getConfiguration('', null).get(key);
         }
     });
 
     suiteTeardown(async () => {
-        for (let key in previousConfigs) {
-            if (previousConfigs.hasOwnProperty(key)) {
-                await workspace.getConfiguration('', null).update(key, previousConfigs[key], true);
-            }
+        for (let key of Object.keys(previousConfigs)) {
+            await workspace.getConfiguration('', null).update(key, previousConfigs[key], true);
         }
     });
 
@@ -220,13 +216,13 @@ suite("List editing.", () => {
                 '- [ ] test',
                 '- [ ] test',
             ],
-            new Selection(0, 0, 1, 0),
+            new Selection(0, 0, 1, 1),
             [
                 '- [x] test',
                 '- [x] test',
-                '- [ ] test'
+                '- [ ] test',
             ],
-            new Selection(0, 0, 1, 0),
+            new Selection(0, 0, 1, 1),
         ).then(done, done)
     });
 
@@ -237,13 +233,32 @@ suite("List editing.", () => {
                 '- [ ] test',
                 '- [x] test',
             ],
-            new Selection(0, 0, 2, 0),
+            new Selection(0, 0, 2, 1),
             [
                 '- [ ] test',
                 '- [ ] test',
-                '- [ ] test'
+                '- [ ] test',
             ],
-            new Selection(0, 0, 2, 0),
+            new Selection(0, 0, 2, 1),
+        ).then(done, done)
+    });
+
+    test("List toggle. 4: Only touch lines that has selections", done => {
+        testCommand('markdown.extension.checkTaskList', {},
+            [
+                '- [ ] test',
+                '- [ ] test',
+                '- [ ] test',
+                '- [ ] test',
+            ],
+            new Selection(0, 10, 3, 0),
+            [
+                '- [ ] test',
+                '- [x] test',
+                '- [x] test',
+                '- [ ] test',
+            ],
+            new Selection(0, 10, 3, 0),
         ).then(done, done)
     });
 });

@@ -15,7 +15,8 @@ export function activate(context: ExtensionContext) {
         commands.registerCommand('markdown.extension.editing.toggleHeadingDown', toggleHeadingDown),
         commands.registerCommand('markdown.extension.editing.toggleList', toggleList),
         commands.registerCommand('markdown.extension.editing.toggleCodeBlock', toggleCodeBlock),
-        commands.registerCommand('markdown.extension.editing.paste', paste)
+        commands.registerCommand('markdown.extension.editing.paste', paste),
+        commands.registerCommand('markdown.extension.editing._wrapBy', args => styleByWrapping(args['before'], args['after']))
     );
 }
 
@@ -226,10 +227,12 @@ function toggleListSingleLine(doc: TextDocument, line: number, wsEdit: Workspace
         wsEdit.replace(doc.uri, new Range(line, indentation, line, indentation + 2), "+ ");
     } else if (lineTextContent.startsWith("+ ")) {
         wsEdit.replace(doc.uri, new Range(line, indentation, line, indentation + 2), "1. ");
-    } else if (/^\d\. /.test(lineTextContent)) {
-        wsEdit.replace(doc.uri, new Range(line, indentation + 1, line, indentation + 2), ")");
-    } else if (/^\d\) /.test(lineTextContent)) {
-        wsEdit.delete(doc.uri, new Range(line, indentation, line, indentation + 3));
+    } else if (/^\d+\. /.test(lineTextContent)) {
+        const lenOfDigits = /^(\d+)\./.exec(lineText.trim())[1].length;
+        wsEdit.replace(doc.uri, new Range(line, indentation + lenOfDigits, line, indentation + lenOfDigits + 1), ")");
+    } else if (/^\d+\) /.test(lineTextContent)) {
+        const lenOfDigits = /^(\d+)\)/.exec(lineText.trim())[1].length;
+        wsEdit.delete(doc.uri, new Range(line, indentation, line, indentation + lenOfDigits + 2));
     } else {
         wsEdit.insert(doc.uri, new Position(line, indentation), "- ");
     }

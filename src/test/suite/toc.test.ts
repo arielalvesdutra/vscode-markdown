@@ -8,18 +8,14 @@ suite("TOC.", () => {
         // 💩 Preload file to prevent the first test to be treated timeout
         await workspace.openTextDocument(testMdFile);
 
-        for (let key in previousConfigs) {
-            if (previousConfigs.hasOwnProperty(key)) {
-                previousConfigs[key] = workspace.getConfiguration('', null).get(key);
-            }
+        for (let key of Object.keys(previousConfigs)) {
+            previousConfigs[key] = workspace.getConfiguration('', null).get(key);
         }
     });
 
     suiteTeardown(async () => {
-        for (let key in previousConfigs) {
-            if (previousConfigs.hasOwnProperty(key)) {
-                await workspace.getConfiguration('', null).update(key, previousConfigs[key], true);
-            }
+        for (let key of Object.keys(previousConfigs)) {
+            await workspace.getConfiguration('', null).update(key, previousConfigs[key], true);
         }
     });
 
@@ -78,6 +74,42 @@ suite("TOC.", () => {
                 '  - [Section 1.1](#section-11)',
                 '- [Section 2](#section-2)',
                 '  - [Section 2.1](#section-21)'
+            ],
+            new Selection(0, 0, 0, 0)).then(done, done);
+    });
+
+    test("Update (ordered list)", done => {
+        testCommand('markdown.extension.toc.update',
+            {
+                "markdown.extension.toc.orderedList": true
+            },
+            [
+                '# Section 1',
+                '',
+                '## Section 1.1',
+                '',
+                '# Section 2',
+                '',
+                '## Section 2.1',
+                '',
+                '1. [Section 1](#section-1)',
+                '   1. [Section 1.1](#section-11)',
+                '2. [Section 2](#section-2)'
+            ],
+            new Selection(0, 0, 0, 0),
+            [
+                '# Section 1',
+                '',
+                '## Section 1.1',
+                '',
+                '# Section 2',
+                '',
+                '## Section 2.1',
+                '',
+                '1. [Section 1](#section-1)',
+                '   1. [Section 1.1](#section-11)',
+                '2. [Section 2](#section-2)',
+                '   1. [Section 2.1](#section-21)'
             ],
             new Selection(0, 0, 0, 0)).then(done, done);
     });
@@ -195,7 +227,7 @@ suite("TOC.", () => {
                 '',
                 '# Section 2',
                 '',
-                '- [Section 中文](#section-%e4%b8%ad%e6%96%87)',
+                '- [Section 中文](#section-中文)',
                 '  - [Section 1.1](#section-11)',
                 '- [Section 2](#section-2)'
             ],
@@ -227,10 +259,10 @@ suite("TOC.", () => {
             new Selection(7, 30, 7, 30)).then(done, done);
     });
 
-    test("Non-Latin symbols (Option `toc.githubCompatibility`)", done => {
+    test("Non-Latin symbols (Option `toc.slugifyMode: github`)", done => {
         testCommand('markdown.extension.toc.create',
             {
-                "markdown.extension.toc.githubCompatibility": true
+                "markdown.extension.toc.slugifyMode": "github"
             },
             [
                 '# Секция 1',
@@ -245,16 +277,65 @@ suite("TOC.", () => {
                 '',
                 '## Секция 1.1',
                 '',
-                '- [Секция 1](#Секция-1)',
-                '  - [Секция 1.1](#Секция-11)'
+                '- [Секция 1](#секция-1)',
+                '  - [Секция 1.1](#секция-11)'
             ],
             new Selection(5, 28, 5, 28)).then(done, done);
+    });
+
+    // https://github.com/yzhang-gh/vscode-markdown/issues/469
+    test("Non-Latin symbols (Option `toc.slugifyMode = gitlab`)", done => {
+        testCommand('markdown.extension.toc.create',
+            {
+                "markdown.extension.toc.slugifyMode": "gitlab"
+            },
+            [
+                '# Секция 1',
+                '',
+                '## Секция 1.1',
+                '',
+                ''
+            ],
+            new Selection(4, 0, 4, 0),
+            [
+                '# Секция 1',
+                '',
+                '## Секция 1.1',
+                '',
+                '- [Секция 1](#секция-1)',
+                '  - [Секция 1.1](#секция-11)'
+            ],
+            new Selection(5, 28, 5, 28)).then(done, done);
+    });
+
+    test("Non-Latin symbols (Option `toc.slugifyMode = gitea`)", done => {
+        testCommand('markdown.extension.toc.create',
+            {
+                "markdown.extension.toc.slugifyMode": "gitea"
+            },
+            [
+                '# Секция 1',
+                '',
+                '## Секция 1.1',
+                '',
+                ''
+            ],
+            new Selection(4, 0, 4, 0),
+            [
+                '# Секция 1',
+                '',
+                '## Секция 1.1',
+                '',
+                '- [Секция 1](#секция-1)',
+                '  - [Секция 1.1](#секция-1-1)'
+            ],
+            new Selection(5, 29, 5, 29)).then(done, done);
     });
 
     test("Update multiple TOCs", done => {
         testCommand('markdown.extension.toc.update',
             {
-                "markdown.extension.toc.githubCompatibility": true
+                "markdown.extension.toc.slugifyMode": "github"
             },
             [
                 '# Head 1',
@@ -506,6 +587,7 @@ suite("TOC.", () => {
         testCommand('markdown.extension.toc.create', {},
             [
                 '# [text](link)',
+                '# [text2][label]',
                 '# **bold**',
                 '# *it1* _it2_',
                 '# `code`',
@@ -514,9 +596,10 @@ suite("TOC.", () => {
                 '',
                 ''
             ],
-            new Selection(7, 0, 7, 0),
+            new Selection(8, 0, 8, 0),
             [
                 '# [text](link)',
+                '# [text2][label]',
                 '# **bold**',
                 '# *it1* _it2_',
                 '# `code`',
@@ -524,12 +607,198 @@ suite("TOC.", () => {
                 '# 1) Heading',
                 '',
                 '- [text](#text)',
+                '- [text2](#text2)',
                 '- [**bold**](#bold)',
                 '- [*it1* _it2_](#it1-it2)',
                 '- [`code`](#code)',
                 '- [1. Heading](#1-heading)',
                 '- [1) Heading](#1-heading-1)'
             ],
-            new Selection(12, 28, 12, 28)).then(done, done);
+            new Selection(14, 28, 14, 28)).then(done, done);
+    });
+
+    // https://github.com/yzhang-gh/vscode-markdown/issues/469
+    test("Multiple removed symbols in a row (Option `toc.slugifyMode = gitlab`)", done => {
+        testCommand('markdown.extension.toc.create',
+            {
+                "markdown.extension.toc.slugifyMode": "gitlab"
+            },
+            [
+                '# Test + Heading',
+                '',
+                ''
+            ],
+            new Selection(2, 0, 2, 0),
+            [
+                '# Test + Heading',
+                '',
+                '- [Test + Heading](#test-heading)'
+            ],
+            new Selection(2, 33, 2, 33)).then(done, done);
+    });
+
+    test("Add section numbers", done => {
+        testCommand('markdown.extension.toc.addSecNumbers', {},
+            [
+                '---',
+                'title: test',
+                '---',
+                '# Heading 1',
+                '##  Heading 1.1',
+                '   Heading 2',
+                '===',
+                '```markdown',
+                '# _Heading 3',
+                '```',
+                '## Heading 2.1',
+                '## _Heading 2.2 <!-- omit in toc -->',
+                '<!--',
+                '## _Heading 2.3',
+                '-->',
+                '## Heading 2.2',
+            ],
+            new Selection(0, 0, 0, 0),
+            [
+                '---',
+                'title: test',
+                '---',
+                '# 1. Heading 1',
+                '##  1.1. Heading 1.1',
+                '   2. Heading 2',
+                '===',
+                '```markdown',
+                '# _Heading 3',
+                '```',
+                '## 2.1. Heading 2.1',
+                '## _Heading 2.2 <!-- omit in toc -->',
+                '<!--',
+                '## _Heading 2.3',
+                '-->',
+                '## 2.2. Heading 2.2',
+            ],
+            new Selection(0, 0, 0, 0)).then(done, done);
+    });
+
+    test("Update section numbers", done => {
+        testCommand('markdown.extension.toc.addSecNumbers', {},
+            [
+                '---',
+                'title: test',
+                '---',
+                '# Heading 1',
+                '## 1.2. Heading 1.1',
+                '2. Heading 2',
+                '===',
+                '```markdown',
+                '# _Heading 3',
+                '```',
+                '## 2.1.1. Heading 2.1',
+                '## _Heading 2.2 <!-- omit in toc -->',
+                '<!--',
+                '## _Heading 2.3',
+                '-->',
+                '## 2.2. Heading 2.2',
+            ],
+            new Selection(0, 0, 0, 0),
+            [
+                '---',
+                'title: test',
+                '---',
+                '# 1. Heading 1',
+                '## 1.1. Heading 1.1',
+                '2. Heading 2',
+                '===',
+                '```markdown',
+                '# _Heading 3',
+                '```',
+                '## 2.1. Heading 2.1',
+                '## _Heading 2.2 <!-- omit in toc -->',
+                '<!--',
+                '## _Heading 2.3',
+                '-->',
+                '## 2.2. Heading 2.2',
+            ],
+            new Selection(0, 0, 0, 0)).then(done, done);
+    });
+
+    test("Remove section numbers", done => {
+        testCommand('markdown.extension.toc.removeSecNumbers', {},
+            [
+                '---',
+                'title: test',
+                '---',
+                '# 1. Heading 1',
+                '## 1.1. Heading 1.1',
+                '2. Heading 2',
+                '===',
+                '```markdown',
+                '# _Heading 3',
+                '```',
+                '## 2.1. Heading 2.1',
+                '## _Heading 2.2 <!-- omit in toc -->',
+                '<!--',
+                '## _Heading 2.3',
+                '-->',
+                '## 2.2. Heading 2.2',
+            ],
+            new Selection(0, 0, 0, 0),
+            [
+                '---',
+                'title: test',
+                '---',
+                '# Heading 1',
+                '## Heading 1.1',
+                'Heading 2',
+                '===',
+                '```markdown',
+                '# _Heading 3',
+                '```',
+                '## Heading 2.1',
+                '## _Heading 2.2 <!-- omit in toc -->',
+                '<!--',
+                '## _Heading 2.3',
+                '-->',
+                '## Heading 2.2',
+            ],
+            new Selection(0, 0, 0, 0)).then(done, done);
+    });
+
+    test("Section numbering starting level", done => {
+        testCommand('markdown.extension.toc.addSecNumbers', {},
+            [
+                '# Heading <!-- omit in toc -->',
+                '## Heading 1',
+                '## Heading 2',
+                '## Heading 3',
+            ],
+            new Selection(0, 0, 0, 0),
+            [
+                '# Heading <!-- omit in toc -->',
+                '## 1. Heading 1',
+                '## 2. Heading 2',
+                '## 3. Heading 3',
+            ],
+            new Selection(0, 0, 0, 0)).then(done, done);
+    });
+
+    test("Section numbering and `toc.levels`", done => {
+        testCommand('markdown.extension.toc.addSecNumbers',
+            {
+                "markdown.extension.toc.levels": "2..6"
+            },
+            [
+                '# Heading',
+                '## Heading 1',
+                '## Heading 2',
+                '## Heading 3',
+            ],
+            new Selection(0, 0, 0, 0),
+            [
+                '# Heading',
+                '## 1. Heading 1',
+                '## 2. Heading 2',
+                '## 3. Heading 3',
+            ],
+            new Selection(0, 0, 0, 0)).then(done, done);
     });
 });

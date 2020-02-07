@@ -39,8 +39,11 @@ class MarkdownDocumentFormatter implements DocumentFormattingEditProvider {
         let edits: TextEdit[] = [];
         let tables = this.detectTables(document.getText());
         if (tables !== null) {
+            let startingPos = 0;
             tables.forEach(table => {
-                edits.push(new TextEdit(this.getRange(document, table), this.formatTable(table, document, options)));
+                const tableRange = this.getRange(document, table, startingPos);
+                edits.push(new TextEdit(tableRange, this.formatTable(table, document, options)));
+                startingPos = document.offsetAt(tableRange.end);
             });
             return edits;
         } else {
@@ -66,10 +69,10 @@ class MarkdownDocumentFormatter implements DocumentFormattingEditProvider {
         return text.match(tableRegex);
     }
 
-    private getRange(document: TextDocument, text: string) {
+    private getRange(document: TextDocument, text: string, startingPos: number) {
         let documentText = document.getText();
-        let start = document.positionAt(documentText.indexOf(text));
-        let end = document.positionAt(documentText.indexOf(text) + text.length);
+        let start = document.positionAt(documentText.indexOf(text, startingPos));
+        let end = document.positionAt(documentText.indexOf(text, startingPos) + text.length);
         return new Range(start, end);
     }
 
@@ -105,7 +108,8 @@ class MarkdownDocumentFormatter implements DocumentFormattingEditProvider {
         // Regex to extract cell content.
         // Known issue: `\\|` is not correctly parsed as a valid delimiter
         let fieldRegExp = new RegExp(/(?:((?:\\\||`.*?`|[^\|])*)\|)/gu);
-        let cjkRegex = /[\u3000-\u9fff\uff01-\uff60]/g;
+        // https://www.ling.upenn.edu/courses/Spring_2003/ling538/UnicodeRanges.html
+        let cjkRegex = /[\u3000-\u9fff\uac00-\ud7af\uff01-\uff60]/g;
 
         let lines = rows.map((row, num) => {
             // Normalize
